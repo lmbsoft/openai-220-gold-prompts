@@ -749,6 +749,7 @@
         </div>
         <div class="detail-actions">
           <button class="btn primary" id="toggleLangBtn" disabled>Ver contenido en inglés</button>
+          <button class="btn secondary" id="copyPromptBtn" type="button" disabled>Copiar prompt</button>
           <span class="status-lang" id="langStatus">Idioma actual: —</span>
         </div>
       </div>
@@ -787,6 +788,7 @@
     const detailLinks = document.getElementById("detailLinks");
     const referenceList = document.getElementById("referenceList");
     const toggleLangBtn = document.getElementById("toggleLangBtn");
+    const copyPromptBtn = document.getElementById("copyPromptBtn");
     const langStatus = document.getElementById("langStatus");
     const clearSelectionBtn = document.getElementById("clearSelectionBtn");
     const countBadge = document.getElementById("countBadge");
@@ -796,6 +798,7 @@
     let currentIndex = null;
     let currentLang = "es"; // "es" o "en"
     let activeRow = null;
+    let copyResetTimeout = null;
 
     totalCount.textContent = DATA.length.toString();
     visibleCount.textContent = DATA.length.toString();
@@ -963,6 +966,101 @@
       detailLinks.classList.remove("hidden");
     }
 
+    function getPromptTextByLang(item) {
+      if (!item) {
+        return "";
+      }
+      if (currentLang === "es") {
+        return item.prompt_es || item.prompt || "";
+      }
+      return item.prompt || item.prompt_es || "";
+    }
+
+    function resetCopyButton() {
+      if (!copyPromptBtn) {
+        return;
+      }
+      if (copyResetTimeout) {
+        clearTimeout(copyResetTimeout);
+        copyResetTimeout = null;
+      }
+      copyPromptBtn.disabled = true;
+      copyPromptBtn.textContent = "Copiar prompt";
+    }
+
+    function refreshCopyButton(item) {
+      if (!copyPromptBtn) {
+        return;
+      }
+      if (copyResetTimeout) {
+        clearTimeout(copyResetTimeout);
+        copyResetTimeout = null;
+      }
+
+      if (!item) {
+        resetCopyButton();
+        return;
+      }
+
+      const text = getPromptTextByLang(item);
+      if (!text) {
+        resetCopyButton();
+        return;
+      }
+
+      copyPromptBtn.disabled = false;
+      const suffix = currentLang === "es" ? "ES" : "EN";
+      copyPromptBtn.textContent = `Copiar prompt (${suffix})`;
+    }
+
+    function fallbackCopyToClipboard(text) {
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.top = "-9999px";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const successful = document.execCommand("copy");
+        document.body.removeChild(textarea);
+        return successful;
+      } catch (error) {
+        return false;
+      }
+    }
+
+    async function copyPromptToClipboard(item) {
+      if (!item || !copyPromptBtn) {
+        return;
+      }
+
+      const text = getPromptTextByLang(item);
+      if (!text) {
+        return;
+      }
+
+      copyPromptBtn.disabled = true;
+
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else if (!fallbackCopyToClipboard(text)) {
+          throw new Error("clipboard-unavailable");
+        }
+        copyPromptBtn.textContent = "Copiado";
+      } catch (error) {
+        copyPromptBtn.textContent = "Error al copiar";
+      } finally {
+        copyResetTimeout = setTimeout(() => {
+          const latestItem = currentIndex != null ? DATA[currentIndex] : null;
+          refreshCopyButton(latestItem || null);
+        }, 1800);
+        copyPromptBtn.disabled = currentIndex == null;
+      }
+    }
+
     function showDetail(index) {
       if (index == null || index < 0 || index >= DATA.length) {
         return;
@@ -990,6 +1088,7 @@
         langStatus.textContent = "Idioma actual: —";
         toggleLangBtn.textContent = "Ver contenido en inglés";
         renderReferenceLinks(null);
+        resetCopyButton();
         return;
       }
 
@@ -1003,6 +1102,7 @@
         toggleLangBtn.textContent = "Ver contenido en español";
         langStatus.textContent = "Idioma actual: Inglés (EN)";
       }
+      refreshCopyButton(item);
     }
 
     toggleLangBtn.addEventListener("click", () => {
@@ -1012,6 +1112,16 @@
       currentLang = currentLang === "es" ? "en" : "es";
       updatePromptText();
     });
+
+    if (copyPromptBtn) {
+      copyPromptBtn.addEventListener("click", () => {
+        if (currentIndex == null) {
+          return;
+        }
+        const item = DATA[currentIndex];
+        copyPromptToClipboard(item);
+      });
+    }
 
     clearSelectionBtn.addEventListener("click", () => {
       currentIndex = null;
